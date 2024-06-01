@@ -2568,6 +2568,9 @@ TEST(IRSimilarityCandidate, Overlap) {
   SpecificBumpPtrAllocator<IRInstructionData> InstDataAllocator;
   SpecificBumpPtrAllocator<IRInstructionDataList> IDLAllocator;
   IRInstructionMapper Mapper(&InstDataAllocator, &IDLAllocator);
+
+  std::vector<IRInstructionData *> InstrList;
+  std::vector<unsigned> UnsignedVec;
   getVectors(*M, Mapper, InstrList, UnsignedVec);
 
   // Check to make sure that we have a long enough region.
@@ -2582,7 +2585,7 @@ TEST(IRSimilarityCandidate, Overlap) {
   IRSimilarityCandidate Cand1(0, 2, *Start, *End);
   IRSimilarityCandidate Cand2(0, 2, *Start, *End);
 
-  ASSERT_TRUE(IRSimilarityCandidate::isSimilar(Cand1, Cand2));
+  ASSERT_FALSE(IRSimilarityCandidate::overlap(Cand1, Cand2));
 }
 
 // Checks that two sets of identical instructions are found to be the same.
