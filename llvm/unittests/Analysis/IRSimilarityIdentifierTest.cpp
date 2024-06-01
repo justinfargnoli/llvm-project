@@ -2533,6 +2533,58 @@ TEST(IRSimilarityCandidate, DifferentPHIStructureInternal) {
   ASSERT_FALSE(longSimCandCompare(InstrList, true, 5, 0, 7));
 }
 
+TEST(IRSimilarityCandidate, Overlap) {
+  StringRef ModuleString = R"(
+                          define i32 @f(i32 %a, i32 %b) {
+                          bb0:
+                             br label %bb2
+                          bb1:
+                             br label %bb2
+                          bb3:
+                             br label %bb2
+                          bb2:
+                             %0 = phi i32 [ %a, %bb0 ], [ %b, %bb1 ] 
+                             %1 = add i32 %b, %a
+                             %2 = add i32 %a, %b
+                             ret i32 0
+                          }
+                          
+                          define i32 @f2(i32 %a, i32 %b) {
+                          bb0:
+                             br label %bb2
+                          bb1:
+                             br label %bb2
+                          bb3:
+                             br label %bb2
+                          bb2:
+                             %0 = phi i32 [ %a, %bb0 ], [ %b, %bb3 ] 
+                             %1 = add i32 %b, %a
+                             %2 = add i32 %a, %b
+                             ret i32 0
+                          })";
+  LLVMContext Context;
+  std::unique_ptr<Module> M = makeLLVMModule(Context, ModuleString);
+
+  SpecificBumpPtrAllocator<IRInstructionData> InstDataAllocator;
+  SpecificBumpPtrAllocator<IRInstructionDataList> IDLAllocator;
+  IRInstructionMapper Mapper(&InstDataAllocator, &IDLAllocator);
+  getVectors(*M, Mapper, InstrList, UnsignedVec);
+
+  // Check to make sure that we have a long enough region.
+  ASSERT_EQ(InstrList.size(), static_cast<unsigned>(3));
+  // Check that the instructions were added correctly to both vectors.
+  ASSERT_TRUE(InstrList.size() == UnsignedVec.size());
+
+  std::vector<IRInstructionData *>::iterator Start, End;
+  Start = InstrList.begin();
+  End = InstrList.begin();
+  std::advance(End, 1);
+  IRSimilarityCandidate Cand1(0, 2, *Start, *End);
+  IRSimilarityCandidate Cand2(0, 2, *Start, *End);
+
+  ASSERT_TRUE(IRSimilarityCandidate::isSimilar(Cand1, Cand2));
+}
+
 // Checks that two sets of identical instructions are found to be the same.
 // Both sequences of adds have the same operand ordering, and the same
 // instructions, making them strcturally equivalent.
