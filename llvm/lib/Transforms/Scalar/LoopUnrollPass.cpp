@@ -828,8 +828,8 @@ shouldPragmaUnroll(Loop *L, const PragmaInfo &PInfo,
     }
     LLVM_DEBUG(dbgs().indent(2)
                << "Not unrolling with user count " << UnrollCount << ": "
-               << (!UP.AllowRemainder ? "remainder not allowed"
-                                      : "exceeds threshold")
+               << (UP.AllowRemainder ? "exceeds threshold"
+                                     : "remainder not allowed")
                << ".\n");
   }
 
@@ -1409,7 +1409,7 @@ tryToUnrollLoop(Loop *L, DominatorTree &DT, LoopInfo *LI, ScalarEvolution &SE,
   bool IsCountSetExplicitly =
       computeUnrollCount(L, TTI, DT, LI, &AC, SE, EphValues, &ORE, TripCount,
                          MaxTripCount, MaxOrZero, TripMultiple, UCE, UP, PP);
-  if (!UP.Count)
+  if (!UP.Count) {
     LLVM_DEBUG(dbgs().indent(1)
                << "Not unrolling: no viable strategy found.\n");
     return LoopUnrollResult::Unmodified;
