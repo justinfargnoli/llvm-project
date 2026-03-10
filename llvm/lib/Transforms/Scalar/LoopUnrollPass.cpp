@@ -867,7 +867,7 @@ shouldPragmaUnroll(Loop *L, const UnrollPragmaInfo &PInfo,
 /// Return true if \p L contains a load or store to an alloca whose address
 /// is loop-dependent.  Full-unrolling such loops can eliminate the alloca
 /// entirely once all constant-index accesses are visible to SROA.
-static bool hasLoopDependentArrayAccess(const Loop *L, ScalarEvolution &SE) {
+static bool hasLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
   for (BasicBlock *BB : L->blocks()) {
     for (Instruction &I : *BB) {
       Value *Ptr = nullptr;
@@ -878,10 +878,10 @@ static bool hasLoopDependentArrayAccess(const Loop *L, ScalarEvolution &SE) {
       else
         continue;
 
-      SmallVector<const Value *, 4> Objects;
-      getUnderlyingObjects(Ptr, Objects, /*LI=*/nullptr, /*MaxLookup=*/10);
-      for (const Value *Obj : Objects) {
-        if (!isa<AllocaInst>(Obj))
+      SmallVector<const Value *, 4> UnderlyingObjects;
+      getUnderlyingObjects(Ptr, UnderlyingObjects);
+      for (const Value *UnderlyingObject : UnderlyingObjects) {
+        if (!isa<AllocaInst>(UnderlyingObject))
           continue;
         const SCEV *PtrSCEV = SE.getSCEV(Ptr);
         if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant)
@@ -910,7 +910,7 @@ static std::optional<unsigned> shouldFullUnroll(
   // like the rest of the loop body.
   uint64_t UnrolledSize = UCE.getUnrolledLoopSize(UP);
   unsigned Threshold = UP.Threshold;
-  if (hasLoopDependentArrayAccess(L, SE))
+  if (hasLoopDependentAccess(L, SE))
     Threshold *= UP.LoopDependentMemoryAccessThresholdMultiplier;
   if (UnrolledSize < Threshold) {
     LLVM_DEBUG(dbgs().indent(2) << "Unrolling: size " << UnrolledSize
