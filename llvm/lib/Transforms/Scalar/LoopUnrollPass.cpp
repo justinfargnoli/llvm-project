@@ -887,7 +887,7 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
           continue;
         const SCEV *PtrSCEV = SE.getSCEV(Ptr);
         // Optimistically include LoopVariant, accesses which
-        // we are not confident are LoopComputable, but may still benfit from
+        // we are not confident are LoopComputable, but may still benefit from
         // full unrolling.
         if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant)
           return true;
@@ -918,7 +918,7 @@ static std::optional<unsigned> shouldFullUnroll(
   if (UP.LoopDependentMemoryAccessThresholdMultiplier > 1 &&
       mayHaveLoopDependentAccess(L, SE)) {
     LLVM_DEBUG(dbgs().indent(2)
-               << "Boosting the full unroll treshold by a factor of"
+               << "Boosting the full unroll threshold by a factor of "
                << UP.LoopDependentMemoryAccessThresholdMultiplier << "\n");
     Threshold = SaturatingMultiply(
         Threshold, UP.LoopDependentMemoryAccessThresholdMultiplier);
