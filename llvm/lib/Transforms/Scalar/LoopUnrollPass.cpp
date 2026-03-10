@@ -50,6 +50,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
@@ -222,6 +223,7 @@ TargetTransformInfo::UnrollingPreferences llvm::gatherUnrollingPreferences(
   UP.SCEVExpansionBudget = SCEVCheapExpansionBudget;
   UP.RuntimeUnrollMultiExit = false;
   UP.AddAdditionalAccumulators = false;
+  UP.LoopDependentMemoryAccessThresholdMultiplier = 1;
 
   // Override with any target specific settings
   TTI.getUnrollingPreferences(L, SE, UP, &ORE);
@@ -865,9 +867,9 @@ shouldPragmaUnroll(Loop *L, const UnrollPragmaInfo &PInfo,
 }
 
 /// Return true if \p L contains a load or store to an alloca whose address
-/// is loop-dependent.  Full-unrolling such loops can eliminate the alloca
+/// may be loop-dependent. Full-unrolling such loops can eliminate the alloca
 /// entirely once all constant-index accesses are visible to SROA.
-static bool hasLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
+static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
   for (BasicBlock *BB : L->blocks()) {
     for (Instruction &I : *BB) {
       Value *Ptr = nullptr;
@@ -884,6 +886,9 @@ static bool hasLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
         if (!isa<AllocaInst>(UnderlyingObject))
           continue;
         const SCEV *PtrSCEV = SE.getSCEV(Ptr);
+        // Optimistically include LoopVariant, accesses which
+        // we are not confident are LoopComputable, but may still benfit from
+        // full unrolling.
         if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant)
           return true;
       }
@@ -910,9 +915,15 @@ static std::optional<unsigned> shouldFullUnroll(
   // like the rest of the loop body.
   uint64_t UnrolledSize = UCE.getUnrolledLoopSize(UP);
   unsigned Threshold = UP.Threshold;
-  if (hasLoopDependentAccess(L, SE))
-    Threshold *= UP.LoopDependentMemoryAccessThresholdMultiplier;
-  if (UnrolledSize < Threshold) {
+  if (UP.LoopDependentMemoryAccessThresholdMultiplier > 1 &&
+      mayHaveLoopDependentAccess(L, SE)) {
+    LLVM_DEBUG(dbgs().indent(2)
+               << "Boosting the full unroll treshold by a factor of"
+               << UP.LoopDependentMemoryAccessThresholdMultiplier << "\n");
+    Threshold = SaturatingMultiply(
+        Threshold, UP.LoopDependentMemoryAccessThresholdMultiplier);
+  }
+  if (UCE.getUnrolledLoopSize(UP) < Threshold) {
     LLVM_DEBUG(dbgs().indent(2) << "Unrolling: size " << UnrolledSize
                                 << " < threshold " << Threshold << ".\n");
     return FullUnrollTripCount;
