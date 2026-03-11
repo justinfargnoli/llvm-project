@@ -886,9 +886,8 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
         if (!isa<AllocaInst>(UnderlyingObject))
           continue;
         const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-        // Optimistically include LoopVariant, accesses which
-        // we are not confident are LoopComputable, but may still benefit from
-        // full unrolling.
+        // Optimistically include LoopVariant because those accesses may still
+        // benefit from full unrolling.
         if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant)
           return true;
       }

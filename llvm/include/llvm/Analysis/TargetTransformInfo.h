@@ -735,7 +735,7 @@ public:
     /// Allow unrolling to add parallel reduction phis.
     bool AddAdditionalAccumulators;
     /// Multiply the full-unroll Threshold when the loop contains a potentially
-    /// loop-dependent memory accesses to an alloca whose elimination would be
+    /// loop-dependent memory access to an alloca whose elimination would be
     /// aided by full unrolling.
     unsigned LoopDependentMemoryAccessThresholdMultiplier;
   };
