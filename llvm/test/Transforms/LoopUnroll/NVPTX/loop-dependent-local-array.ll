@@ -66,6 +66,63 @@ exit:
   ret void
 }
 
+; An outer loop should not get the threshold boost just because an inner loop
+; accesses an alloca with a pointer that is LoopVariant w.r.t. the outer loop
+; (due to a SCEVUnknown in the inner loop), when the address does not actually
+; depend on the outer loop's IV.
+define void @inner_loop_variant_alloca(ptr %src) {
+; CHECK-LABEL: define void @inner_loop_variant_alloca(
+; CHECK-SAME: ptr [[SRC:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*]]:
+; CHECK-NEXT:    [[ARR:%.*]] = alloca [4 x i32], align 4
+; CHECK-NEXT:    br label %[[OUTER:.*]]
+; CHECK:       [[OUTER]]:
+; CHECK-NEXT:    [[IV_OUTER:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[IV_OUTER_NEXT:%.*]], %[[INNER_EXIT:.*]] ]
+; CHECK-NEXT:    br label %[[INNER:.*]]
+; CHECK:       [[INNER]]:
+; CHECK-NEXT:    [[IV_INNER:%.*]] = phi i32 [ 0, %[[OUTER]] ], [ [[IV_INNER_NEXT:%.*]], %[[INNER]] ]
+; CHECK-NEXT:    [[LOADED_IDX:%.*]] = load i32, ptr [[SRC]], align 4
+; CHECK-NEXT:    [[ARR_PTR:%.*]] = getelementptr inbounds [4 x i32], ptr [[ARR]], i32 0, i32 [[LOADED_IDX]]
+; CHECK-NEXT:    store i32 0, ptr [[ARR_PTR]], align 4
+; CHECK-NEXT:    [[IV_INNER_NEXT]] = add nuw nsw i32 [[IV_INNER]], 1
+; CHECK-NEXT:    [[INNER_COND:%.*]] = icmp eq i32 [[IV_INNER_NEXT]], 2
+; CHECK-NEXT:    br i1 [[INNER_COND]], label %[[INNER_EXIT]], label %[[INNER]], !llvm.loop [[LOOP0:![0-9]+]]
+; CHECK:       [[INNER_EXIT]]:
+; CHECK-NEXT:    [[IV_OUTER_NEXT]] = add nuw nsw i32 [[IV_OUTER]], 1
+; CHECK-NEXT:    [[OUTER_COND:%.*]] = icmp eq i32 [[IV_OUTER_NEXT]], 4
+; CHECK-NEXT:    br i1 [[OUTER_COND]], label %[[EXIT:.*]], label %[[OUTER]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+;
+entry:
+  %arr = alloca [4 x i32], align 4
+  br label %outer
+
+outer:
+  %iv.outer = phi i32 [ 0, %entry ], [ %iv.outer.next, %inner.exit ]
+  br label %inner
+
+inner:
+  %iv.inner = phi i32 [ 0, %outer ], [ %iv.inner.next, %inner ]
+  %loaded.idx = load i32, ptr %src, align 4
+  %arr.ptr = getelementptr inbounds [4 x i32], ptr %arr, i32 0, i32 %loaded.idx
+  store i32 0, ptr %arr.ptr, align 4
+  %iv.inner.next = add nuw nsw i32 %iv.inner, 1
+  %inner.cond = icmp eq i32 %iv.inner.next, 2
+  br i1 %inner.cond, label %inner.exit, label %inner, !llvm.loop !0
+
+inner.exit:
+  %iv.outer.next = add nuw nsw i32 %iv.outer, 1
+  %outer.cond = icmp eq i32 %iv.outer.next, 4
+  br i1 %outer.cond, label %exit, label %outer
+
+exit:
+  ret void
+}
+
+!0 = distinct !{!0, !1}
+!1 = !{!"llvm.loop.unroll.disable"}
+
 ; A loop with an SCEV::LoopVariant store to an alloca should be fully unrolled.
 define i32 @loop_variant_alloca() {
 ; CHECK-LABEL: define i32 @loop_variant_alloca() {
@@ -89,3 +146,8 @@ exit:
   %result = load i32, ptr %arr, align 4
   ret i32 %result
 }
+
+;.
+; CHECK: [[LOOP0]] = distinct !{[[LOOP0]], [[META1:![0-9]+]]}
+; CHECK: [[META1]] = !{!"llvm.loop.unroll.disable"}
+;.

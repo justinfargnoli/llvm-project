@@ -886,9 +886,14 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
         if (!isa<AllocaInst>(UnderlyingObject))
           continue;
         const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-        // Optimistically include LoopVariant because those accesses may still
-        // benefit from full unrolling.
-        if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant)
+        auto PtrLoopDisposition = SE.getLoopDisposition(PtrSCEV, L);
+        if (PtrLoopDisposition == ScalarEvolution::LoopComputable)
+          return true;
+        // For LoopVariant pointers, only boost if the SCEV contains a
+        // recurrence rooted at L. This filters out pointers that are
+        // LoopVariant only because of SCEVUnknowns in nested subloops.
+        if (PtrLoopDisposition == ScalarEvolution::LoopVariant &&
+            SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
           return true;
       }
     }

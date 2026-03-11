@@ -4608,6 +4608,14 @@ bool ScalarEvolution::containsAddRecurrence(const SCEV *S) {
   return FoundAddRec;
 }
 
+bool ScalarEvolution::containsAddRecurrenceOnLoop(const SCEV *S,
+                                                  const Loop *L) {
+  return SCEVExprContains(S, [L](const SCEV *S) {
+    auto *AR = dyn_cast<SCEVAddRecExpr>(S);
+    return AR && AR->getLoop() == L;
+  });
+}
+
 /// Return the ValueOffsetPair set for \p S. \p S can be represented
 /// by the value and offset from any ValueOffsetPair in the set.
 ArrayRef<Value *> ScalarEvolution::getSCEVValues(const SCEV *S) {

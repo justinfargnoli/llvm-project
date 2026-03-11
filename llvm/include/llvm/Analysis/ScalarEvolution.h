@@ -609,6 +609,9 @@ public:
   /// scAddRecExpr. The result will be cached in HasRecMap.
   LLVM_ABI bool containsAddRecurrence(const SCEV *S);
 
+  /// Return true if \p S contains a scAddRecExpr rooted at \p L.
+  LLVM_ABI bool containsAddRecurrenceOnLoop(const SCEV *S, const Loop *L);
+
   /// Is operation \p BinOp between \p LHS and \p RHS provably does not have
   /// a signed/unsigned overflow (\p Signed)? If \p CtxI is specified, the
   /// no-overflow fact should be true in the context of this instruction.
