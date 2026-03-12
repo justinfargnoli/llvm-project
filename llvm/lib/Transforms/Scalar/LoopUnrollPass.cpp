@@ -882,20 +882,20 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
 
       SmallVector<const Value *, 4> UnderlyingObjects;
       getUnderlyingObjects(Ptr, UnderlyingObjects);
-      for (const Value *UnderlyingObject : UnderlyingObjects) {
-        if (!isa<AllocaInst>(UnderlyingObject))
-          continue;
-        const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-        auto PtrLoopDisposition = SE.getLoopDisposition(PtrSCEV, L);
-        if (PtrLoopDisposition == ScalarEvolution::LoopComputable)
-          return true;
-        // For LoopVariant pointers, only boost if the SCEV contains a
-        // recurrence rooted at L. This filters out pointers that are
-        // LoopVariant only because of SCEVUnknowns in nested subloops.
-        if (PtrLoopDisposition == ScalarEvolution::LoopVariant &&
-            SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
-          return true;
-      }
+      if (!any_of(UnderlyingObjects,
+                  [](const Value *V) { return isa<AllocaInst>(V); }))
+        continue;
+
+      const SCEV *PtrSCEV = SE.getSCEV(Ptr);
+      auto PtrLoopDisposition = SE.getLoopDisposition(PtrSCEV, L);
+      if (PtrLoopDisposition == ScalarEvolution::LoopComputable)
+        return true;
+      // For LoopVariant pointers, only boost if the SCEV contains a
+      // recurrence rooted at L. This filters out pointers that are
+      // LoopVariant only because of SCEVUnknowns in nested subloops.
+      if (PtrLoopDisposition == ScalarEvolution::LoopVariant &&
+          SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
+        return true;
     }
   }
   return false;
