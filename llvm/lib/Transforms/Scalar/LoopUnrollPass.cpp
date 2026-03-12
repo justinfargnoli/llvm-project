@@ -836,7 +836,7 @@ shouldPragmaUnroll(Loop *L, const PragmaInfo &PInfo,
     return TripCount;
   }
 
-  if (PInfo.PragmaEnableUnroll && !TripCount && MaxTripCount &&
+  if (PInfo.PragmaEnableUnroll && MaxTripCount &&
       MaxTripCount <= UP.MaxUpperBound)
     return MaxTripCount;
 
@@ -1015,7 +1015,7 @@ bool llvm::computeUnrollCount(Loop *L, const TargetTransformInfo &TTI,
   // Note that the cost of bounded unrolling is always strictly greater than
   // cost of exact full unrolling.  As such, if we have an exact count and
   // found it unprofitable, we'll never chose to bounded unroll.
-  if (!TripCount && MaxTripCount && (UP.UpperBound || MaxOrZero) &&
+  if ((UP.UpperBound || MaxOrZero) && MaxTripCount &&
       MaxTripCount <= UP.MaxUpperBound) {
     UP.Count = MaxTripCount;
     if (auto UnrollFactor = shouldFullUnroll(L, TTI, DT, SE, EphValues,
