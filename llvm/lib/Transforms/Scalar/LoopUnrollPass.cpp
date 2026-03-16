@@ -1183,15 +1183,6 @@ void llvm::computeUnrollCount(Loop *L, const TargetTransformInfo &TTI,
   assert(UP.Count == 0);
   UP.Count = UP.DefaultUnrollRuntimeCount;
 
-  // FIXME: Account for a quirk where we would set `UP.Count = MaxTripCount`
-  // during upper bound unrolling even if we weren't going to upper bound
-  // unroll.
-  if (MaxTripCount && (UP.UpperBound || MaxOrZero) &&
-      MaxTripCount <= UP.MaxUpperBound) {
-    assert(UP.Force);
-    UP.Count = MaxTripCount;
-  }
-
   // Reduce unroll count to be the largest power-of-two factor of
   // the original count which satisfies the threshold limit.
   while (UP.Count != 0 &&
