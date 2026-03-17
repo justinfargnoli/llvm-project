@@ -9,7 +9,7 @@
 ; second copy's exit is folded (since iteration 2,4,... cannot be the
 ; last), and the conditional branch is replaced with an unconditional
 ; one that does not carry !llvm.loop metadata. setLoopAlreadyUnrolled
-; must still mark the loop to prevent further unrolling.Expand commentComment on lines R11 to R12Resolved
+; must still mark the loop to prevent further unrolling.
 
 define void @count(ptr %p) {
 ; CHECK-LABEL: define void @count(

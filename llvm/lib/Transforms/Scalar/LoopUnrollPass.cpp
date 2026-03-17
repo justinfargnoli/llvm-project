@@ -752,7 +752,7 @@ static bool hasUnrollEnablePragma(const Loop *L) {
   return getUnrollMetadataForLoop(L, "llvm.loop.unroll.enable");
 }
 
-// Returns true if the loop has an runtime unroll(disable) pragma.
+// Returns true if the loop has a runtime unroll(disable) pragma.
 static bool hasRuntimeUnrollDisablePragma(const Loop *L) {
   return getUnrollMetadataForLoop(L, "llvm.loop.unroll.runtime.disable");
 }
