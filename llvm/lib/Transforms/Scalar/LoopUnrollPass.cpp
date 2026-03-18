@@ -887,14 +887,7 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
         continue;
 
       const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-      auto PtrLoopDisposition = SE.getLoopDisposition(PtrSCEV, L);
-      if (PtrLoopDisposition == ScalarEvolution::LoopComputable)
-        return true;
-      // For LoopVariant pointers, only boost if the SCEV contains a
-      // recurrence rooted at L. This filters out pointers that are
-      // LoopVariant only because of SCEVUnknowns in nested subloops.
-      if (PtrLoopDisposition == ScalarEvolution::LoopVariant &&
-          SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
+      if (SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
         return true;
     }
   }
@@ -927,7 +920,7 @@ static std::optional<unsigned> shouldFullUnroll(
     Threshold = SaturatingMultiply(
         Threshold, UP.LoopDependentMemoryAccessThresholdMultiplier);
   }
-  if (UCE.getUnrolledLoopSize(UP) < Threshold) {
+  if (UnrolledSize < Threshold) {
     LLVM_DEBUG(dbgs().indent(2) << "Unrolling: size " << UnrolledSize
                                 << " < threshold " << Threshold << ".\n");
     return FullUnrollTripCount;
