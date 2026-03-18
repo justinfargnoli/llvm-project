@@ -887,7 +887,7 @@ static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
         continue;
 
       const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-      if (SE.containsAddRecurrenceOnLoop(PtrSCEV, L))
+      if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant) 
         return true;
     }
   }
