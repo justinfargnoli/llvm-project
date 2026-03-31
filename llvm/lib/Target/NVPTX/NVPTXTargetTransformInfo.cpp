@@ -526,10 +526,41 @@ InstructionCost NVPTXTTIImpl::getArithmeticInstrCost(
   }
 }
 
+/// Return true if \p L contains a load or store to an alloca whose address
+/// may be loop-dependent. Full-unrolling such loops can eliminate the alloca
+/// entirely once all constant-index accesses are visible to SROA.
+static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
+  for (BasicBlock *BB : L->blocks()) {
+    for (Instruction &I : *BB) {
+      Value *Ptr = nullptr;
+      if (auto *LI = dyn_cast<LoadInst>(&I))
+        Ptr = LI->getPointerOperand();
+      else if (auto *SI = dyn_cast<StoreInst>(&I))
+        Ptr = SI->getPointerOperand();
+      else
+        continue;
+
+      SmallVector<const Value *, 4> UnderlyingObjects;
+      getUnderlyingObjects(Ptr, UnderlyingObjects);
+      if (!any_of(UnderlyingObjects,
+                  [](const Value *V) { return isa<AllocaInst>(V); }))
+        continue;
+
+      const SCEV *PtrSCEV = SE.getSCEV(Ptr);
+      if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant) 
+        return true;
+    }
+  }
+  return false;
+}
+
 void NVPTXTTIImpl::getUnrollingPreferences(
     Loop *L, ScalarEvolution &SE, TTI::UnrollingPreferences &UP,
     OptimizationRemarkEmitter *ORE) const {
   BaseT::getUnrollingPreferences(L, SE, UP, ORE);
+
+  if (mayHaveLoopDependentAccess(L, SE))
+    UP.Threshold *= 8;
 
   // Enable partial unrolling and runtime unrolling, but reduce the
   // threshold.  This partially unrolls small loops which are often
@@ -537,7 +568,6 @@ void NVPTXTTIImpl::getUnrollingPreferences(
   // beneficial.
   UP.Partial = UP.Runtime = true;
   UP.PartialThreshold = UP.Threshold / 4;
-  UP.LoopDependentMemoryAccessThresholdMultiplier = 8;
 }
 
 void NVPTXTTIImpl::getPeelingPreferences(Loop *L, ScalarEvolution &SE,

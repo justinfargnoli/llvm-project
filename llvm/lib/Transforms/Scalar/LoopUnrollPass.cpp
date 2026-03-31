@@ -32,7 +32,6 @@
 #include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
@@ -50,7 +49,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
@@ -223,7 +221,6 @@ TargetTransformInfo::UnrollingPreferences llvm::gatherUnrollingPreferences(
   UP.SCEVExpansionBudget = SCEVCheapExpansionBudget;
   UP.RuntimeUnrollMultiExit = false;
   UP.AddAdditionalAccumulators = false;
-  UP.LoopDependentMemoryAccessThresholdMultiplier = 1;
 
   // Override with any target specific settings
   TTI.getUnrollingPreferences(L, SE, UP, &ORE);
@@ -866,34 +863,6 @@ shouldPragmaUnroll(Loop *L, const UnrollPragmaInfo &PInfo,
   return std::nullopt;
 }
 
-/// Return true if \p L contains a load or store to an alloca whose address
-/// may be loop-dependent. Full-unrolling such loops can eliminate the alloca
-/// entirely once all constant-index accesses are visible to SROA.
-static bool mayHaveLoopDependentAccess(const Loop *L, ScalarEvolution &SE) {
-  for (BasicBlock *BB : L->blocks()) {
-    for (Instruction &I : *BB) {
-      Value *Ptr = nullptr;
-      if (auto *LI = dyn_cast<LoadInst>(&I))
-        Ptr = LI->getPointerOperand();
-      else if (auto *SI = dyn_cast<StoreInst>(&I))
-        Ptr = SI->getPointerOperand();
-      else
-        continue;
-
-      SmallVector<const Value *, 4> UnderlyingObjects;
-      getUnderlyingObjects(Ptr, UnderlyingObjects);
-      if (!any_of(UnderlyingObjects,
-                  [](const Value *V) { return isa<AllocaInst>(V); }))
-        continue;
-
-      const SCEV *PtrSCEV = SE.getSCEV(Ptr);
-      if (SE.getLoopDisposition(PtrSCEV, L) != ScalarEvolution::LoopInvariant) 
-        return true;
-    }
-  }
-  return false;
-}
-
 static std::optional<unsigned> shouldFullUnroll(
     Loop *L, const TargetTransformInfo &TTI, DominatorTree &DT,
     ScalarEvolution &SE, const SmallPtrSetImpl<const Value *> &EphValues,
@@ -911,18 +880,9 @@ static std::optional<unsigned> shouldFullUnroll(
   // When computing the unrolled size, note that BEInsns are not replicated
   // like the rest of the loop body.
   uint64_t UnrolledSize = UCE.getUnrolledLoopSize(UP);
-  unsigned Threshold = UP.Threshold;
-  if (UP.LoopDependentMemoryAccessThresholdMultiplier > 1 &&
-      mayHaveLoopDependentAccess(L, SE)) {
-    LLVM_DEBUG(dbgs().indent(2)
-               << "Boosting the full unroll threshold by a factor of "
-               << UP.LoopDependentMemoryAccessThresholdMultiplier << "\n");
-    Threshold = SaturatingMultiply(
-        Threshold, UP.LoopDependentMemoryAccessThresholdMultiplier);
-  }
-  if (UnrolledSize < Threshold) {
+  if (UnrolledSize < UP.Threshold) {
     LLVM_DEBUG(dbgs().indent(2) << "Unrolling: size " << UnrolledSize
-                                << " < threshold " << Threshold << ".\n");
+                                << " < threshold " << UP.Threshold << ".\n");
     return FullUnrollTripCount;
   }
 
