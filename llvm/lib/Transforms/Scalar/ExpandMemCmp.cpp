@@ -22,6 +22,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/ProfDataUtils.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -55,6 +56,16 @@ static cl::opt<unsigned> MaxLoadsPerMemcmpOptSize(
 
 namespace {
 
+// Return the known alignment of the pointer argument \p ArgNo of \p CI,
+// combining the alignment of the underlying pointer value with any align
+// attribute on the call site itself.
+static Align getMemCmpArgAlignment(const CallInst *CI, unsigned ArgNo,
+                                   const DataLayout &DL) {
+  Align A = CI->getArgOperand(ArgNo)->getPointerAlignment(DL);
+  if (MaybeAlign ParamAlign = CI->getParamAlign(ArgNo))
+    A = std::max(A, *ParamAlign);
+  return A;
+}
 
 // This class provides helper functions to expand a memcmp library call into an
 // inline expansion.
@@ -317,8 +328,8 @@ MemCmpExpansion::LoadPair MemCmpExpansion::getLoadPair(Type *LoadSizeType,
   // Get the memory source at offset `OffsetBytes`.
   Value *LhsSource = CI->getArgOperand(0);
   Value *RhsSource = CI->getArgOperand(1);
-  Align LhsAlign = LhsSource->getPointerAlignment(DL);
-  Align RhsAlign = RhsSource->getPointerAlignment(DL);
+  Align LhsAlign = getMemCmpArgAlignment(CI, 0, DL);
+  Align RhsAlign = getMemCmpArgAlignment(CI, 1, DL);
   if (OffsetBytes > 0) {
     auto *ByteType = Type::getInt8Ty(CI->getContext());
     LhsSource = Builder.CreateConstGEP1_64(ByteType, LhsSource, OffsetBytes);
@@ -859,6 +870,37 @@ static bool expandMemCmp(CallInst *CI, const TargetTransformInfo *TTI,
   if (!OptForSize && MaxLoadsPerMemcmp.getNumOccurrences())
     Options.MaxNumLoads = MaxLoadsPerMemcmp;
 
+  // Keep only the load sizes the target can actually access given the
+  // statically known common alignment of both pointers: either the access is
+  // naturally aligned, or the target allows a misaligned access of that width.
+  // This lets strict-alignment targets expand compares whose pointers happen to
+  // be sufficiently aligned, while still falling back to the libcall when no
+  // load size fits. Because the greedy load sequence only places a load of size
+  // S at an offset that is a multiple of S, a load that does not exceed the
+  // base alignment is guaranteed to be naturally aligned.
+  //
+  // Note we query whether the access is *allowed*, not whether it is *fast*:
+  // this matches the historical behavior of forming unaligned loads whenever
+  // the target permits them, so it is a no-op for targets that allow unaligned
+  // access even when it is slow.
+  const Align LhsAlign = getMemCmpArgAlignment(CI, 0, *DL);
+  const Align RhsAlign = getMemCmpArgAlignment(CI, 1, *DL);
+  const Align MinAlign = std::min(LhsAlign, RhsAlign);
+  LLVMContext &Context = CI->getContext();
+  unsigned AS = CI->getArgOperand(0)->getType()->getPointerAddressSpace();
+  llvm::erase_if(Options.LoadSizes, [&](unsigned LoadSize) {
+    if (MinAlign >= LoadSize)
+      return false;
+    return !TTI->allowsMisalignedMemoryAccesses(Context, LoadSize * 8, AS,
+                                                MinAlign);
+  });
+  // If the filter removed every load size, bail out to the libcall: the
+  // MemCmpExpansion constructor asserts that at least one load size remains.
+  // In practice all in-tree targets include a byte load size, which is
+  // accessible at any alignment and therefore always survives the filter.
+  if (Options.LoadSizes.empty())
+    return false;
+
   MemCmpExpansion Expansion(CI, SizeVal, Options, IsUsedForZeroCmp, *DL, DTU);
 
   // Don't expand if this will require more loads than desired by the target.
@@ -878,56 +920,32 @@ static bool expandMemCmp(CallInst *CI, const TargetTransformInfo *TTI,
   return true;
 }
 
-// Returns true if a change was made.
-static bool runOnBlock(BasicBlock &BB, const TargetLibraryInfo *TLI,
-                       const TargetTransformInfo *TTI, const DataLayout &DL,
-                       ProfileSummaryInfo *PSI, BlockFrequencyInfo *BFI,
-                       DomTreeUpdater *DTU);
-
 static PreservedAnalyses runImpl(Function &F, const TargetLibraryInfo *TLI,
                                  const TargetTransformInfo *TTI,
                                  ProfileSummaryInfo *PSI,
-                                 BlockFrequencyInfo *BFI, DominatorTree *DT);
-
-bool runOnBlock(BasicBlock &BB, const TargetLibraryInfo *TLI,
-                const TargetTransformInfo *TTI, const DataLayout &DL,
-                ProfileSummaryInfo *PSI, BlockFrequencyInfo *BFI,
-                DomTreeUpdater *DTU) {
-  for (Instruction &I : BB) {
-    CallInst *CI = dyn_cast<CallInst>(&I);
-    if (!CI) {
-      continue;
-    }
-    LibFunc Func;
-    if (TLI->getLibFunc(*CI, Func) &&
-        (Func == LibFunc_memcmp || Func == LibFunc_bcmp) &&
-        expandMemCmp(CI, TTI, &DL, PSI, BFI, DTU, Func == LibFunc_bcmp)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-PreservedAnalyses runImpl(Function &F, const TargetLibraryInfo *TLI,
-                          const TargetTransformInfo *TTI,
-                          ProfileSummaryInfo *PSI, BlockFrequencyInfo *BFI,
-                          DominatorTree *DT) {
+                                 BlockFrequencyInfo *BFI, DominatorTree *DT) {
   std::optional<DomTreeUpdater> DTU;
   if (DT)
     DTU.emplace(DT, DomTreeUpdater::UpdateStrategy::Lazy);
 
   const DataLayout& DL = F.getDataLayout();
-  bool MadeChanges = false;
-  for (auto BBIt = F.begin(); BBIt != F.end();) {
-    if (runOnBlock(*BBIt, TLI, TTI, DL, PSI, BFI, DTU ? &*DTU : nullptr)) {
-      MadeChanges = true;
-      // If changes were made, restart the function from the beginning, since
-      // the structure of the function was changed.
-      BBIt = F.begin();
-    } else {
-      ++BBIt;
+  SmallVector<std::pair<CallInst *, LibFunc>, 8> MemCmpCalls;
+  for (Instruction &I : instructions(F)) {
+    if (auto *CI = dyn_cast<CallInst>(&I)) {
+      LibFunc Func;
+      if (TLI->getLibFunc(*CI, Func) &&
+          (Func == LibFunc_memcmp || Func == LibFunc_bcmp))
+        MemCmpCalls.push_back({CI, Func});
     }
   }
+
+  bool MadeChanges = false;
+  for (const auto &[CI, Func] : MemCmpCalls) {
+    if (expandMemCmp(CI, TTI, &DL, PSI, BFI, DTU ? &*DTU : nullptr,
+                     Func == LibFunc_bcmp))
+      MadeChanges = true;
+  }
+
   if (MadeChanges)
     for (BasicBlock &BB : F)
       SimplifyInstructionsInBlock(&BB);

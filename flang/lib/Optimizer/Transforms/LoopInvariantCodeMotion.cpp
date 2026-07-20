@@ -17,12 +17,14 @@
 #include "flang/Optimizer/Dialect/FIROpsSupport.h"
 #include "flang/Optimizer/Dialect/FortranVariableInterface.h"
 #include "flang/Optimizer/HLFIR/HLFIROps.h"
+#include "flang/Optimizer/Support/Utils.h"
 #include "flang/Optimizer/Transforms/Passes.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/LoopInvariantCodeMotionUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/DebugLog.h"
+#include <utility>
 
 namespace fir {
 #define GEN_PASS_DEF_LOOPINVARIANTCODEMOTION
@@ -45,7 +47,7 @@ using namespace mlir;
 /// may be added later).
 /// The safety of hoisting is proven by:
 ///   * Proving that the loop runs at least one iteration.
-///   * Proving that is is always safe to load from this location
+///   * Proving that it is always safe to load from this location
 ///     (see isSafeToHoistLoad() comments below).
 struct LoopInvariantCodeMotion
     : fir::impl::LoopInvariantCodeMotionBase<LoopInvariantCodeMotion> {
@@ -104,9 +106,10 @@ static bool isNonOptionalScalar(Value location) {
       return false;
     }
 
-    // Scalars "defined" by fir.alloca and fir.address_of
-    // are present.
-    if (isa<fir::AllocaOp, fir::AddrOfOp>(defOp)) {
+    // Scalars "defined" by fir.address_of or that are new
+    // allocations (e.g. fir.alloca, cuf.alloc, etc.) are present.
+    if (isa<fir::AddrOfOp>(defOp) ||
+        fir::isNewAllocationResult(cast<OpResult>(location)).value_or(false)) {
       LDBG() << "Success: is non optional scalar";
       return true;
     }
@@ -141,13 +144,13 @@ static bool isNonOptionalScalar(Value location) {
 
       // TODO: we can probably use FIR AliasAnalysis' getSource()
       // method to identify the storage in more cases.
-      Value memref = llvm::TypeSwitch<Operation *, Value>(defOp)
-                         .Case<fir::DeclareOp, hlfir::DeclareOp>(
-                             [](auto op) { return op.getMemref(); })
-                         .Default([](auto) { return nullptr; });
+      location = llvm::TypeSwitch<Operation *, Value>(defOp)
+                     .Case<fir::DeclareOp, hlfir::DeclareOp>(
+                         [](auto op) { return op.getMemref(); })
+                     .Default([](auto) { return nullptr; });
 
-      if (memref)
-        return isNonOptionalScalar(memref);
+      if (location)
+        continue;
 
       LDBG() << "Failure: cannot reason about variable storage";
       return false;
@@ -263,7 +266,15 @@ void LoopInvariantCodeMotion::runOnOperation() {
   LDBG() << "Enter [HL]FIR LoopInvariantCodeMotion()";
 
   auto &aliasAnalysis = getAnalysis<AliasAnalysis>();
-  aliasAnalysis.addAnalysisImplementation(fir::AliasAnalysis{});
+  // Enable getSource() memoization on the FIR AliasAnalysis for the duration
+  // of this pass. This is a frozen-snapshot cache with no automatic
+  // invalidation, but it is sound here because LICM only moves operations, so
+  // getSource()'s inputs are unchanged across the hoists. The cache lives no
+  // longer than this analysis instance, which the pass manager drops when the
+  // analysis is invalidated after the pass.
+  fir::AliasAnalysis firAliasAnalysis;
+  firAliasAnalysis.enableSourceCache();
+  aliasAnalysis.addAnalysisImplementation(std::move(firAliasAnalysis));
 
   std::function<bool(Operation *, LoopLikeOpInterface, bool)>
       shouldMoveOutOfLoop = [&](Operation *op, LoopLikeOpInterface loopLike,
