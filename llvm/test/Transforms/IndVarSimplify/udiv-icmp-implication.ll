@@ -10,10 +10,9 @@ define i1 @quotient_eq_zero(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp ult i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -44,10 +43,9 @@ define i1 @quotient_ule_zero(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp ult i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -78,10 +76,9 @@ define i1 @quotient_ult_one(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp ult i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -112,10 +109,9 @@ define i1 @quotient_ne_zero(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp uge i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -146,10 +142,9 @@ define i1 @quotient_ugt_zero(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp uge i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -180,10 +175,9 @@ define i1 @quotient_uge_one(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp uge i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]
@@ -214,10 +208,9 @@ define i1 @constant_on_left(i64 %a, i64 %b) {
 ; INDVARS:       loop.preheader:
 ; INDVARS-NEXT:    br label %loop
 ; INDVARS:       loop:
-; INDVARS-NEXT:    %cmp = icmp uge i64 %a, %b
 ; INDVARS-NEXT:    br i1 false, label %loop, label %exit.loopexit
 ; INDVARS:       exit.loopexit:
-; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ %cmp, %loop ]
+; INDVARS-NEXT:    %cmp.lcssa = phi i1 [ true, %loop ]
 ; INDVARS-NEXT:    br label %exit
 ; INDVARS:       exit:
 ; INDVARS-NEXT:    %result = phi i1 [ false, %entry ], [ %cmp.lcssa, %exit.loopexit ]

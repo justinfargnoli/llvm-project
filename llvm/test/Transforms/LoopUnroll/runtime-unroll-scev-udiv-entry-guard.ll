@@ -21,14 +21,52 @@ define void @openmp_loop(
 ; CHECK-NEXT:    %skip_inner = icmp ult i64 %numerator, %denominator
 ; CHECK-NEXT:    br i1 %skip_inner, label %outer_latch, label %inner.preheader
 ; CHECK:       inner.preheader:
+; CHECK-NEXT:    %0 = add i64 %quotient, -1
+; CHECK-NEXT:    %xtraiter = and i64 %quotient, 7
+; CHECK-NEXT:    %1 = icmp ult i64 %0, 7
+; CHECK-NEXT:    br i1 %1, label %inner.epil.preheader, label %inner.preheader.new
+; CHECK:       inner.preheader.new:
+; CHECK-NEXT:    %unroll_iter = sub i64 %quotient, %xtraiter
 ; CHECK-NEXT:    br label %inner
 ; CHECK:       inner:
-; CHECK-NEXT:    %count = phi i64 [ %next, %inner ], [ %quotient, %inner.preheader ]
-; CHECK-NEXT:    %offset = phi i64 [ %next_offset, %inner ], [ 0, %inner.preheader ]
-; CHECK-NEXT:    %next = add i64 %count, -1
+; CHECK-NEXT:    %count = phi i64 [ %quotient, %inner.preheader.new ], [ %next.7, %inner ]
+; CHECK-NEXT:    %offset = phi i64 [ 0, %inner.preheader.new ], [ %next_offset.7, %inner ]
+; CHECK-NEXT:    %niter = phi i64 [ 0, %inner.preheader.new ], [ %niter.next.7, %inner ]
 ; CHECK-NEXT:    %next_offset = add i64 %offset, %denominator
-; CHECK-NEXT:    %continue = icmp ugt i64 %count, 1
-; CHECK-NEXT:    br i1 %continue, label %inner, label %outer_latch.loopexit
+; CHECK-NEXT:    %next_offset.1 = add i64 %next_offset, %denominator
+; CHECK-NEXT:    %next_offset.2 = add i64 %next_offset.1, %denominator
+; CHECK-NEXT:    %next_offset.3 = add i64 %next_offset.2, %denominator
+; CHECK-NEXT:    %next_offset.4 = add i64 %next_offset.3, %denominator
+; CHECK-NEXT:    %next_offset.5 = add i64 %next_offset.4, %denominator
+; CHECK-NEXT:    %next_offset.6 = add i64 %next_offset.5, %denominator
+; CHECK-NEXT:    %next.7 = add i64 %count, -8
+; CHECK-NEXT:    %next_offset.7 = add i64 %next_offset.6, %denominator
+; CHECK-NEXT:    %niter.next.7 = add i64 %niter, 8
+; CHECK-NEXT:    %niter.ncmp.7 = icmp ne i64 %niter.next.7, %unroll_iter
+; CHECK-NEXT:    br i1 %niter.ncmp.7, label %inner, label %outer_latch.loopexit.unr-lcssa
+; CHECK:       outer_latch.loopexit.unr-lcssa:
+; CHECK-NEXT:    %count.unr = phi i64 [ %next.7, %inner ]
+; CHECK-NEXT:    %offset.unr = phi i64 [ %next_offset.7, %inner ]
+; CHECK-NEXT:    %lcmp.mod = icmp ne i64 %xtraiter, 0
+; CHECK-NEXT:    br i1 %lcmp.mod, label %inner.epil.preheader, label %outer_latch.loopexit
+; CHECK:       inner.epil.preheader:
+; CHECK-NEXT:    %count.epil.init = phi i64 [ %quotient, %inner.preheader ], [ %count.unr, %outer_latch.loopexit.unr-lcssa ]
+; CHECK-NEXT:    %offset.epil.init = phi i64 [ 0, %inner.preheader ], [ %offset.unr, %outer_latch.loopexit.unr-lcssa ]
+; CHECK-NEXT:    %lcmp.mod1 = icmp ne i64 %xtraiter, 0
+; CHECK-NEXT:    call void @llvm.assume(i1 %lcmp.mod1)
+; CHECK-NEXT:    br label %inner.epil
+; CHECK:       inner.epil:
+; CHECK-NEXT:    %count.epil = phi i64 [ %next.epil, %inner.epil ], [ %count.epil.init, %inner.epil.preheader ]
+; CHECK-NEXT:    %offset.epil = phi i64 [ %next_offset.epil, %inner.epil ], [ %offset.epil.init, %inner.epil.preheader ]
+; CHECK-NEXT:    %epil.iter = phi i64 [ 0, %inner.epil.preheader ], [ %epil.iter.next, %inner.epil ]
+; CHECK-NEXT:    %next.epil = add i64 %count.epil, -1
+; CHECK-NEXT:    %next_offset.epil = add i64 %offset.epil, %denominator
+; CHECK-NEXT:    %continue.epil = icmp ugt i64 %count.epil, 1
+; CHECK-NEXT:    %epil.iter.next = add i64 %epil.iter, 1
+; CHECK-NEXT:    %epil.iter.cmp = icmp ne i64 %epil.iter.next, %xtraiter
+; CHECK-NEXT:    br i1 %epil.iter.cmp, label %inner.epil, label %outer_latch.loopexit.epilog-lcssa, !llvm.loop !0
+; CHECK:       outer_latch.loopexit.epilog-lcssa:
+; CHECK-NEXT:    br label %outer_latch.loopexit
 ; CHECK:       outer_latch.loopexit:
 ; CHECK-NEXT:    br label %outer_latch
 ; CHECK:       outer_latch:
@@ -84,6 +122,8 @@ define void @udiv_entry_guard_reduced(ptr %denominator_ptr) {
 ; CHECK-LABEL: define void @udiv_entry_guard_reduced(ptr %denominator_ptr) {
 ; CHECK-NEXT:  entry:
 ; CHECK-NEXT:    br label %outer
+; CHECK:       outer.loopexit.unr-lcssa:
+; CHECK-NEXT:    br label %outer.loopexit
 ; CHECK:       outer.loopexit:
 ; CHECK-NEXT:    br label %outer.backedge
 ; CHECK:       outer:
@@ -94,12 +134,35 @@ define void @udiv_entry_guard_reduced(ptr %denominator_ptr) {
 ; CHECK:       outer.backedge:
 ; CHECK-NEXT:    br label %outer
 ; CHECK:       inner.preheader:
+; CHECK-NEXT:    %0 = add nsw i64 %quotient, -1
+; CHECK-NEXT:    %xtraiter = and i64 %quotient, 7
+; CHECK-NEXT:    %lcmp.mod = icmp ne i64 %xtraiter, 0
+; CHECK-NEXT:    br i1 %lcmp.mod, label %inner.prol.preheader, label %inner.prol.loopexit
+; CHECK:       inner.prol.preheader:
+; CHECK-NEXT:    br label %inner.prol
+; CHECK:       inner.prol:
+; CHECK-NEXT:    %count.prol = phi i64 [ %next.prol, %inner.prol ], [ %quotient, %inner.prol.preheader ]
+; CHECK-NEXT:    %prol.iter = phi i64 [ 0, %inner.prol.preheader ], [ %prol.iter.next, %inner.prol ]
+; CHECK-NEXT:    %next.prol = add i64 %count.prol, -1
+; CHECK-NEXT:    %continue.prol = icmp ugt i64 %count.prol, 1
+; CHECK-NEXT:    %prol.iter.next = add i64 %prol.iter, 1
+; CHECK-NEXT:    %prol.iter.cmp = icmp ne i64 %prol.iter.next, %xtraiter
+; CHECK-NEXT:    br i1 %prol.iter.cmp, label %inner.prol, label %inner.prol.loopexit.unr-lcssa, !llvm.loop !2
+; CHECK:       inner.prol.loopexit.unr-lcssa:
+; CHECK-NEXT:    %count.unr.ph = phi i64 [ %next.prol, %inner.prol ]
+; CHECK-NEXT:    br label %inner.prol.loopexit
+; CHECK:       inner.prol.loopexit:
+; CHECK-NEXT:    %count.unr = phi i64 [ %quotient, %inner.preheader ], [ %count.unr.ph, %inner.prol.loopexit.unr-lcssa ]
+; CHECK-NEXT:    %1 = icmp ult i64 %0, 7
+; CHECK-NEXT:    br i1 %1, label %outer.loopexit, label %inner.preheader.new
+; CHECK:       inner.preheader.new:
 ; CHECK-NEXT:    br label %inner
 ; CHECK:       inner:
-; CHECK-NEXT:    %count = phi i64 [ %next, %inner ], [ %quotient, %inner.preheader ]
-; CHECK-NEXT:    %next = add i64 %count, -1
-; CHECK-NEXT:    %continue = icmp ugt i64 %count, 1
-; CHECK-NEXT:    br i1 %continue, label %inner, label %outer.loopexit
+; CHECK-NEXT:    %count = phi i64 [ %count.unr, %inner.preheader.new ], [ %next.7, %inner ]
+; CHECK-NEXT:    %next.6 = add i64 %count, -7
+; CHECK-NEXT:    %next.7 = add i64 %count, -8
+; CHECK-NEXT:    %continue.7 = icmp ugt i64 %next.6, 1
+; CHECK-NEXT:    br i1 %continue.7, label %inner, label %outer.loopexit.unr-lcssa
 ;
 entry:
   br label %outer
